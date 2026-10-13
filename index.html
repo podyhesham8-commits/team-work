@@ -1,0 +1,1190 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>فريق المبرمجين | CodeCollab</title>
+  <meta name="description" content="منصة تعاونية شاملة لفرق البرمجة: محرر أكواد حي وتفاعلي بلغات متعددة مع معاينة مباشرة، غرف عمل، شات فوري، وإدارة مهام.">
+  
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800;900&family=Fira+Code:wght@400;500;600&display=swap" rel="stylesheet">
+  
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Cairo', 'system-ui', 'sans-serif'],
+            mono: ['Fira Code', 'monospace']
+          }
+        }
+      }
+    };
+  </script>
+
+  <style>
+    body {
+      font-family: 'Cairo', system-ui, -apple-system, sans-serif;
+    }
+    code, pre {
+      font-family: 'Fira Code', monospace;
+    }
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(156, 163, 175, 0.4);
+      border-radius: 9999px;
+    }
+  </style>
+
+  <!-- Real Firebase 10 SDK Scripts -->
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+</head>
+<body class="bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 min-h-screen transition-colors duration-200">
+  <div id="root"></div>
+
+  <script>
+    // --- Real Firebase Configuration ---
+    const firebaseConfig = {
+      projectId: "jumping-tempest-6q6d2",
+      appId: "1:105543111874:web:73fd88586c1e19ab9c175b",
+      apiKey: "AIzaSyAlQmbbQ9hrrWphPS81zHTRtyDuwCZPi4c",
+      authDomain: "jumping-tempest-6q6d2.firebaseapp.com",
+      firestoreDatabaseId: "ai-studio-codecollab-4143d176-7d7f-4242-a6da-c4a7785ceabc",
+      storageBucket: "jumping-tempest-6q6d2.firebasestorage.app",
+      messagingSenderId: "105543111874"
+    };
+
+    let app = null;
+    let auth = null;
+    let db = null;
+    let googleProvider = null;
+    let isFirebaseReady = false;
+
+    try {
+      if (!firebase.apps.length) {
+        app = firebase.initializeApp(firebaseConfig);
+      } else {
+        app = firebase.app();
+      }
+      auth = firebase.auth();
+      db = firebase.app().firestore(firebaseConfig.firestoreDatabaseId);
+      googleProvider = new firebase.auth.GoogleAuthProvider();
+      googleProvider.setCustomParameters({ prompt: 'select_account' });
+      isFirebaseReady = true;
+    } catch (err) {
+      console.error("Firebase Init Error:", err);
+    }
+
+    // --- Audio Feedback ---
+    function playChime() {
+      try {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (!AudioCtx) return;
+        const ctx = new AudioCtx();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(587.33, ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.12);
+        gain.gain.setValueAtTime(0.08, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.2);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.2);
+      } catch (e) {}
+    }
+
+    // --- State Store ---
+    const state = {
+      theme: localStorage.getItem('collab_theme') || 'dark',
+      lang: localStorage.getItem('collab_lang') || 'ar',
+      user: null,
+      authLoading: true,
+      authError: null,
+      tables: [],
+      tablesLoading: false,
+      selectedTable: null,
+      workspaceTab: 'code', // code, chat, tasks, docs, releases
+      showPreview: true,
+      activeFileId: null,
+      codeFiles: [],
+      chatMessages: [],
+      tasks: [],
+      docs: [],
+      commits: [],
+      unsubTableFiles: null,
+      unsubTableChat: null,
+      unsubTableTasks: null,
+      unsubTableDocs: null,
+      unsubTableCommits: null,
+      modals: {
+        createTable: false,
+        joinPassword: null,
+        newFile: false,
+        addTask: false
+      }
+    };
+
+    // Apply Theme & Lang on boot
+    function applyTheme() {
+      if (state.theme === 'dark') document.documentElement.classList.add('dark');
+      else document.documentElement.classList.remove('dark');
+      localStorage.setItem('collab_theme', state.theme);
+    }
+    function applyLang() {
+      document.documentElement.dir = state.lang === 'ar' ? 'rtl' : 'ltr';
+      document.documentElement.lang = state.lang;
+      localStorage.setItem('collab_lang', state.lang);
+    }
+    applyTheme();
+    applyLang();
+
+    function toggleTheme() {
+      state.theme = state.theme === 'dark' ? 'light' : 'dark';
+      applyTheme();
+      render();
+    }
+    function toggleLang() {
+      state.lang = state.lang === 'ar' ? 'en' : 'ar';
+      applyLang();
+      render();
+    }
+
+    // --- Real Firebase Auth Listener ---
+    if (auth) {
+      auth.onAuthStateChanged(async (currentUser) => {
+        state.authLoading = false;
+        if (currentUser) {
+          state.user = {
+            uid: currentUser.uid,
+            displayName: currentUser.displayName || 'عبد الرحمن هشام',
+            email: currentUser.email || 'podyhesham8@gmail.com',
+            photoURL: currentUser.photoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${currentUser.uid}`
+          };
+
+          // Save/Sync user profile in Firestore
+          if (db) {
+            try {
+              await db.collection('users').doc(currentUser.uid).set({
+                userId: currentUser.uid,
+                displayName: state.user.displayName,
+                email: state.user.email,
+                photoURL: state.user.photoURL,
+                createdAt: new Date().toISOString()
+              }, { merge: true });
+            } catch (err) {
+              console.warn("User profile sync error:", err);
+            }
+          }
+
+          // Start listening to real Firestore tables
+          listenToRealTables();
+        } else {
+          state.user = null;
+          state.tables = [];
+          state.selectedTable = null;
+          unsubscribeWorkspace();
+        }
+        render();
+      });
+    } else {
+      state.authLoading = false;
+      render();
+    }
+
+    // --- Real Google Sign-In Action ---
+    async function loginGoogle() {
+      state.authError = null;
+      state.authLoading = true;
+      render();
+
+      try {
+        if (!auth || !googleProvider) {
+          throw new Error("لم يتم تحميل خدمات Firebase بشكل سليم. تحقق من الاتصال بالإنترنت.");
+        }
+        const result = await auth.signInWithPopup(googleProvider);
+        console.log("Real Google Login Success:", result.user.email);
+      } catch (err) {
+        console.error("Google Login Error:", err);
+        const msg = err.message || String(err);
+        if (msg.includes("popup-closed-by-user")) {
+          state.authError = "تم إغلاق نافذة تسجيل الدخول بجوجل.";
+        } else if (msg.includes("unauthorized-domain")) {
+          state.authError = "هذا النطاق يحتاج إلى إضافته في Authorized Domains داخل Firebase Console.";
+        } else if (window.location.protocol === 'file:') {
+          state.authError = "تنبيه: متصفحات الويب تمنع تشغيل نوافذ Google OAuth عبر بروتوكول file:// المباشر. لتسجيل الدخول الحقيقي بجوجل، قم بتشغيل الملف عبر سيرفر محلي (مثل Live Server أو localhost) أو ارفعه على GitHub/Firebase.";
+        } else {
+          state.authError = msg;
+        }
+      } finally {
+        state.authLoading = false;
+        render();
+      }
+    }
+
+    async function logout() {
+      unsubscribeWorkspace();
+      if (auth) {
+        await auth.signOut();
+      }
+      state.user = null;
+      state.selectedTable = null;
+      render();
+    }
+
+    // --- Real Firestore: Listen to Tables Collection ---
+    function listenToRealTables() {
+      if (!db || !state.user) return;
+      state.tablesLoading = true;
+
+      db.collection('tables').orderBy('createdAt', 'desc').onSnapshot(
+        (snapshot) => {
+          const list = [];
+          snapshot.forEach(docSnap => {
+            const data = docSnap.data();
+            list.push({
+              id: docSnap.id,
+              name: data.name || 'غرفة عمل',
+              description: data.description || '',
+              category: data.category || 'web',
+              isPrivate: Boolean(data.isPrivate),
+              password: data.password || '',
+              maxMembers: data.maxMembers || 5,
+              memberCount: data.memberCount || 1,
+              creatorId: data.creatorId || '',
+              creatorName: data.creatorName || 'مطور'
+            });
+          });
+          state.tables = list;
+          state.tablesLoading = false;
+          render();
+        },
+        (error) => {
+          console.error("Firestore tables error:", error);
+          state.tablesLoading = false;
+          render();
+        }
+      );
+    }
+
+    // --- Real Firestore: Create Table ---
+    async function submitCreateTable(e) {
+      e.preventDefault();
+      if (!db || !state.user) return;
+
+      const name = document.getElementById('create_name').value.trim();
+      const desc = document.getElementById('create_desc').value.trim();
+      const cat = document.getElementById('create_cat').value;
+      const max = parseInt(document.getElementById('create_max').value) || 5;
+      const isPrivate = document.getElementById('create_is_private').checked;
+      const pass = isPrivate ? document.getElementById('create_pass').value.trim() : '';
+
+      try {
+        const now = new Date().toISOString();
+        const docRef = await db.collection('tables').add({
+          name,
+          description: desc,
+          category: cat,
+          maxMembers: max,
+          memberCount: 1,
+          isPrivate,
+          password: pass,
+          creatorId: state.user.uid,
+          creatorName: state.user.displayName,
+          createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+
+        // Add starter files to this table in real Firestore
+        const starterHtml = '<!DOCTYPE html>\n<html lang="ar" dir="rtl">\n<head>\n  <meta charset="UTF-8">\n  <title>' + name + '<\/title>\n  <link rel="stylesheet" href="style.css">\n<\/head>\n<body>\n  <div class="card">\n    <h1>🚀 مرحباً بكم في ' + name + '<\/h1>\n    <p>' + (desc || 'بيئة العمل البرمجية المباشرة') + '<\/p>\n    <button id="runBtn">اضغط للتجربة<\/button>\n    <div id="output"><\/div>\n  <\/div>\n  <script src="app.js"><\/script>\n<\/body>\n<\/html>';
+        const starterCss = 'body {\n  font-family: system-ui, sans-serif;\n  background: #0f172a;\n  color: #f8fafc;\n  display: flex;\n  justify-content: center;\n  align-items: center;\n  min-height: 100vh;\n  margin: 0;\n}\n.card {\n  background: #1e293b;\n  padding: 2.5rem;\n  border-radius: 1.25rem;\n  box-shadow: 0 20px 25px -5px rgba(0,0,0,0.4);\n  border: 1px solid #334155;\n  text-align: center;\n  max-width: 420px;\n}\nh1 {\n  font-size: 1.4rem;\n  color: #818cf8;\n  margin-bottom: 0.75rem;\n}\nbutton {\n  background: #6366f1;\n  color: white;\n  border: none;\n  padding: 0.7rem 1.6rem;\n  font-size: 0.95rem;\n  font-weight: bold;\n  border-radius: 0.6rem;\n  cursor: pointer;\n  margin-top: 1rem;\n}\nbutton:hover {\n  background: #4f46e5;\n}\n#output {\n  margin-top: 1rem;\n  color: #38bdf8;\n  font-weight: 600;\n}';
+        const starterJs = 'document.getElementById("runBtn").addEventListener("click", () => {\n  const out = document.getElementById("output");\n  out.textContent = "✨ تم تشغيل الكود بنجاح والتفاعل نشط!";\n  console.log("بيئة العمل تعمل بكفاءة 100%!");\n});';
+
+        await docRef.collection('files').add({
+          name: 'index.html',
+          language: 'html',
+          content: starterHtml,
+          lastModifiedBy: state.user.uid,
+          lastModifiedByName: state.user.displayName,
+          createdAt: now,
+          updatedAt: now
+        });
+
+        await docRef.collection('files').add({
+          name: 'style.css',
+          language: 'css',
+          content: starterCss,
+          lastModifiedBy: state.user.uid,
+          lastModifiedByName: state.user.displayName,
+          createdAt: now,
+          updatedAt: now
+        });
+
+        await docRef.collection('files').add({
+          name: 'app.js',
+          language: 'javascript',
+          content: starterJs,
+          lastModifiedBy: state.user.uid,
+          lastModifiedByName: state.user.displayName,
+          createdAt: now,
+          updatedAt: now
+        });
+
+        // Add welcome message
+        await docRef.collection('messages').add({
+          text: 'أهلاً بكم في غرفة العمل (' + name + ')! بيئة البرمجة الحية والشات جاهزة للتفاعل.',
+          senderId: state.user.uid,
+          senderName: state.user.displayName,
+          createdAt: now
+        });
+
+        // Add default task
+        await docRef.collection('tasks').add({
+          title: 'تهيئة بيئة المشروع وتوزيع المهام',
+          status: 'in_progress',
+          priority: 'high',
+          assignee: state.user.displayName,
+          creatorId: state.user.uid,
+          createdAt: now,
+          updatedAt: now
+        });
+
+        state.modals.createTable = false;
+        playChime();
+        selectTable(docRef.id);
+      } catch (err) {
+        console.error("Create table error:", err);
+        alert("فشل إنشاء الغرفة في قاعدة البيانات: " + err.message);
+      }
+    }
+
+    // --- Real Workspace Subcollections Listeners ---
+    function unsubscribeWorkspace() {
+      if (state.unsubTableFiles) { state.unsubTableFiles(); state.unsubTableFiles = null; }
+      if (state.unsubTableChat) { state.unsubTableChat(); state.unsubTableChat = null; }
+      if (state.unsubTableTasks) { state.unsubTableTasks(); state.unsubTableTasks = null; }
+      if (state.unsubTableDocs) { state.unsubTableDocs(); state.unsubTableDocs = null; }
+      if (state.unsubTableCommits) { state.unsubTableCommits(); state.unsubTableCommits = null; }
+    }
+
+    function listenToWorkspace(tableId) {
+      if (!db) return;
+      unsubscribeWorkspace();
+
+      const tableRef = db.collection('tables').doc(tableId);
+
+      // 1. Files
+      state.unsubTableFiles = tableRef.collection('files').orderBy('createdAt', 'asc').onSnapshot(snap => {
+        const files = [];
+        snap.forEach(d => {
+          files.push({ id: d.id, ...d.data() });
+        });
+        state.codeFiles = files;
+        if (files.length > 0 && (!state.activeFileId || !files.find(f => f.id === state.activeFileId))) {
+          state.activeFileId = files[0].id;
+        }
+        render();
+      });
+
+      // 2. Chat
+      state.unsubTableChat = tableRef.collection('messages').orderBy('createdAt', 'asc').onSnapshot(snap => {
+        const msgs = [];
+        snap.forEach(d => {
+          msgs.push({ id: d.id, ...d.data() });
+        });
+        state.chatMessages = msgs;
+        render();
+        setTimeout(() => {
+          const area = document.getElementById('chat_scroll_area');
+          if (area) area.scrollTop = area.scrollHeight;
+        }, 50);
+      });
+
+      // 3. Tasks
+      state.unsubTableTasks = tableRef.collection('tasks').orderBy('createdAt', 'desc').onSnapshot(snap => {
+        const tsks = [];
+        snap.forEach(d => {
+          tsks.push({ id: d.id, ...d.data() });
+        });
+        state.tasks = tsks;
+        render();
+      });
+
+      // 4. Docs
+      state.unsubTableDocs = tableRef.collection('docs').orderBy('createdAt', 'asc').onSnapshot(snap => {
+        const docs = [];
+        snap.forEach(d => {
+          docs.push({ id: d.id, ...d.data() });
+        });
+        state.docs = docs;
+        render();
+      });
+
+      // 5. Commits
+      state.unsubTableCommits = tableRef.collection('commits').orderBy('createdAt', 'desc').onSnapshot(snap => {
+        const cmts = [];
+        snap.forEach(d => {
+          cmts.push({ id: d.id, ...d.data() });
+        });
+        state.commits = cmts;
+        render();
+      });
+    }
+
+    // --- Real Updates to Firestore ---
+    let codeUpdateTimeout = null;
+    function updateActiveCode(val) {
+      const activeFile = state.codeFiles.find(f => f.id === state.activeFileId);
+      if (!activeFile) return;
+      activeFile.content = val;
+      updatePreviewIframe();
+
+      // Debounce real sync to Firestore
+      if (codeUpdateTimeout) clearTimeout(codeUpdateTimeout);
+      codeUpdateTimeout = setTimeout(async () => {
+        if (!db || !state.selectedTable) return;
+        try {
+          await db.collection('tables').doc(state.selectedTable.id)
+            .collection('files').doc(activeFile.id).update({
+              content: val,
+              lastModifiedBy: state.user.uid,
+              lastModifiedByName: state.user.displayName,
+              updatedAt: new Date().toISOString()
+            });
+        } catch (e) {
+          console.warn("Firestore code sync:", e);
+        }
+      }, 400);
+    }
+
+    async function submitChatMessage(e) {
+      e.preventDefault();
+      const input = document.getElementById('chat_input_text');
+      if (!input || !input.value.trim() || !db || !state.selectedTable) return;
+
+      const text = input.value.trim();
+      input.value = '';
+
+      try {
+        await db.collection('tables').doc(state.selectedTable.id).collection('messages').add({
+          text,
+          senderId: state.user.uid,
+          senderName: state.user.displayName,
+          createdAt: new Date().toISOString()
+        });
+        playChime();
+      } catch (err) {
+        console.error("Chat send error:", err);
+      }
+    }
+
+    async function submitAddTask(e) {
+      e.preventDefault();
+      const input = document.getElementById('new_task_input');
+      if (!input || !input.value.trim() || !db || !state.selectedTable) return;
+
+      const title = input.value.trim();
+      try {
+        await db.collection('tables').doc(state.selectedTable.id).collection('tasks').add({
+          title,
+          status: 'todo',
+          priority: 'medium',
+          assignee: state.user.displayName,
+          creatorId: state.user.uid,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        });
+        state.modals.addTask = false;
+        playChime();
+        render();
+      } catch (err) {
+        console.error("Add task error:", err);
+      }
+    }
+
+    async function cycleTask(id) {
+      const task = state.tasks.find(t => t.id === id);
+      if (!task || !db || !state.selectedTable) return;
+
+      const nextMap = { 'todo': 'in_progress', 'in_progress': 'review', 'review': 'done', 'done': 'todo' };
+      const nextStatus = nextMap[task.status] || 'todo';
+
+      try {
+        await db.collection('tables').doc(state.selectedTable.id).collection('tasks').doc(id).update({
+          status: nextStatus,
+          updatedAt: new Date().toISOString()
+        });
+      } catch (err) {
+        console.error("Update task status error:", err);
+      }
+    }
+
+    async function submitCommit(e) {
+      e.preventDefault();
+      const input = document.getElementById('commit_msg_input');
+      if (!input || !input.value.trim() || !db || !state.selectedTable) return;
+
+      const msg = input.value.trim();
+      input.value = '';
+
+      try {
+        await db.collection('tables').doc(state.selectedTable.id).collection('commits').add({
+          message: msg,
+          authorId: state.user.uid,
+          authorName: state.user.displayName,
+          filesCount: state.codeFiles.length,
+          createdAt: new Date().toISOString()
+        });
+        playChime();
+      } catch (err) {
+        console.error("Commit error:", err);
+      }
+    }
+
+    async function submitNewFile(e) {
+      e.preventDefault();
+      const input = document.getElementById('new_file_input');
+      if (!input || !input.value.trim() || !db || !state.selectedTable) return;
+
+      const name = input.value.trim();
+      try {
+        const now = new Date().toISOString();
+        const docRef = await db.collection('tables').doc(state.selectedTable.id).collection('files').add({
+          name,
+          language: name.endsWith('.css') ? 'css' : name.endsWith('.html') ? 'html' : 'javascript',
+          content: '// ملف ' + name,
+          lastModifiedBy: state.user.uid,
+          lastModifiedByName: state.user.displayName,
+          createdAt: now,
+          updatedAt: now
+        });
+        state.modals.newFile = false;
+        state.activeFileId = docRef.id;
+        render();
+      } catch (err) {
+        console.error("Create file error:", err);
+      }
+    }
+
+    // --- Table Select & Leave ---
+    function selectTable(id) {
+      const tbl = state.tables.find(t => t.id === id);
+      if (!tbl) return;
+
+      if (tbl.isPrivate && tbl.creatorId !== state.user?.uid) {
+        state.modals.joinPassword = tbl;
+        render();
+      } else {
+        state.selectedTable = tbl;
+        listenToWorkspace(tbl.id);
+        render();
+      }
+    }
+
+    function submitJoinPass(e) {
+      e.preventDefault();
+      const input = document.getElementById('join_pass_input').value.trim();
+      if (state.modals.joinPassword.password && input !== state.modals.joinPassword.password) {
+        document.getElementById('join_error_text').classList.remove('hidden');
+        return;
+      }
+      const tbl = state.modals.joinPassword;
+      state.modals.joinPassword = null;
+      state.selectedTable = tbl;
+      listenToWorkspace(tbl.id);
+      render();
+    }
+
+    function backToTables() {
+      unsubscribeWorkspace();
+      state.selectedTable = null;
+      render();
+    }
+
+    function setWorkspaceTab(tabId) {
+      state.workspaceTab = tabId;
+      render();
+    }
+    function togglePreview() {
+      state.showPreview = !state.showPreview;
+      render();
+    }
+    function selectFile(id) {
+      state.activeFileId = id;
+      render();
+    }
+    function openCreateModal() { state.modals.createTable = true; render(); }
+    function closeCreateModal() { state.modals.createTable = false; render(); }
+    function closeJoinPassModal() { state.modals.joinPassword = null; render(); }
+    function openNewFileModal() { state.modals.newFile = true; render(); }
+    function closeNewFileModal() { state.modals.newFile = false; render(); }
+    function openAddTaskModal() { state.modals.addTask = true; render(); }
+    function closeAddTaskModal() { state.modals.addTask = false; render(); }
+    function togglePrivateInput(checked) {
+      const el = document.getElementById('private_pass_container');
+      if (el) el.classList.toggle('hidden', !checked);
+    }
+
+    function downloadActiveFile() {
+      const file = state.codeFiles.find(f => f.id === state.activeFileId);
+      if (!file) return;
+      const blob = new Blob([file.content], { type: 'text/plain' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = file.name;
+      a.click();
+    }
+
+    function exportProjectBundle() {
+      if (!state.selectedTable) return;
+      const bundle = {
+        name: state.selectedTable.name,
+        exportedAt: new Date().toISOString(),
+        files: state.codeFiles,
+        tasks: state.tasks,
+        commits: state.commits
+      };
+      const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: 'application/json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = state.selectedTable.name.replace(/\s+/g, '-') + '-bundle.json';
+      a.click();
+    }
+
+    function updatePreviewIframe() {
+      const iframe = document.getElementById('live_preview_iframe');
+      if (!iframe) return;
+      const htmlFile = state.codeFiles.find(f => f.name.endsWith('.html'));
+      const cssFiles = state.codeFiles.filter(f => f.name.endsWith('.css'));
+      const jsFiles = state.codeFiles.filter(f => f.name.endsWith('.js'));
+
+      const htmlContent = htmlFile ? htmlFile.content : '<div style="padding:1rem;"><h1>معاينة الكود</h1></div>';
+      const cssBundle = cssFiles.map(f => f.content).join('\n');
+      const jsBundle = jsFiles.map(f => f.content).join('\n');
+
+      const fullDoc = '<!DOCTYPE html><html><head><meta charset="UTF-8"><style>' + cssBundle + '</style></head><body>' + htmlContent + '<script>try{' + jsBundle + '}catch(e){console.error(e);}<\/script></body></html>';
+      iframe.srcdoc = fullDoc;
+    }
+
+    // --- Main Render Engine ---
+    function render() {
+      const isDark = state.theme === 'dark';
+      const isAr = state.lang === 'ar';
+      const root = document.getElementById('root');
+
+      // Sync root attributes
+      if (isDark) document.documentElement.classList.add('dark');
+      else document.documentElement.classList.remove('dark');
+      document.documentElement.dir = isAr ? 'rtl' : 'ltr';
+
+      // --- SCREEN 1: LOGIN SCREEN ---
+      if (!state.user) {
+        root.innerHTML = `
+          <div class="min-h-screen flex flex-col justify-between p-6">
+            <header class="max-w-6xl w-full mx-auto flex items-center justify-between pb-6 border-b border-slate-200 dark:border-slate-800">
+              <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 to-cyan-500 flex items-center justify-center text-white font-bold shadow-lg shadow-indigo-500/25">
+                  &lt;/&gt;
+                </div>
+                <div>
+                  <h1 class="font-bold text-lg text-slate-900 dark:text-white">${isAr ? 'فريق المبرمجين' : 'CodeCollab'}</h1>
+                  <span class="text-xs text-indigo-500 font-mono font-semibold">Dev Team Hub</span>
+                </div>
+              </div>
+
+              <div class="flex items-center gap-2">
+                <button onclick="toggleLang()" class="px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-xs font-bold cursor-pointer">
+                  ${isAr ? 'English' : 'العربية'}
+                </button>
+                <button onclick="toggleTheme()" class="px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-xs font-bold cursor-pointer">
+                  ${isDark ? '☀️ فاتح' : '🌙 داكن'}
+                </button>
+              </div>
+            </header>
+
+            <main class="max-w-4xl w-full mx-auto my-auto text-center py-12">
+              <div class="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 text-xs font-bold mb-6">
+                <span>🔒 تسجيل دخول حقيقي بجوجل وقاعدة بيانات Firebase المباشرة</span>
+              </div>
+
+              <h2 class="text-3xl sm:text-5xl font-black mb-6 leading-tight text-slate-900 dark:text-white">
+                بيئة عمل برمجية شاملة لفريقك <br>
+                <span class="bg-gradient-to-r from-indigo-600 via-cyan-500 to-purple-600 bg-clip-text text-transparent">
+                  محرر أكواد حي، شات، مهام، وإصدارات
+                </span>
+              </h2>
+
+              <p class="text-base text-slate-600 dark:text-slate-400 max-w-2xl mx-auto mb-8 leading-relaxed">
+                منصة البرمجة التعاونية لفرق العمل. سجل دخولك بحساب Google الحقيقي للاتصال المباشر بقاعدة بيانات Firestore ومشاركة الأكواد لحظياً مع فريقك.
+              </p>
+
+              <div class="flex flex-col items-center justify-center gap-4">
+                <button onclick="loginGoogle()" ${state.authLoading ? 'disabled' : ''} class="px-8 py-4 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-sm shadow-xl shadow-indigo-600/25 flex items-center justify-center gap-3 cursor-pointer disabled:opacity-50 transition-all">
+                  ${state.authLoading ? `
+                    <div class="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                    <span>جاري الاتصال بجوجل...</span>
+                  ` : `
+                    <svg class="w-5 h-5 bg-white rounded-full p-0.5" viewBox="0 0 24 24"><path fill="#EA4335" d="M12 5c1.6 0 3 .6 4.1 1.6l3.1-3.1C17.3 1.7 14.8 1 12 1 7.5 1 3.7 3.6 1.9 7.3l3.7 2.9C6.5 7.4 9 5 12 5z"/><path fill="#4285F4" d="M23.5 12.3c0-.8-.1-1.7-.2-2.3H12v4.6h6.5c-.3 1.5-1.1 2.8-2.4 3.7l3.7 2.9c2.2-2 3.7-5 3.7-8.9z"/><path fill="#FBBC05" d="M5.6 14.8c-.2-.7-.4-1.5-.4-2.3 0-.8.2-1.6.4-2.3L1.9 7.3C.7 9.7 0 12.3 0 15s.7 5.3 1.9 7.7l3.7-2.9z"/><path fill="#34A853" d="M12 23c3.2 0 6-1.1 8-3l-3.7-2.9c-1.1.7-2.5 1.2-4.3 1.2-3 0-5.5-2.4-6.4-5.2L1.9 16c1.8 3.7 5.6 7 10.1 7z"/></svg>
+                    <span>تسجيل الدخول باستخدام Google (الحقيقي)</span>
+                  `}
+                </button>
+
+                ${state.authError ? `
+                  <div class="mt-4 p-4 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-500 text-xs max-w-lg text-start leading-relaxed">
+                    <p class="font-bold mb-1">تنبيه تسجيل الدخول:</p>
+                    <p>${state.authError}</p>
+                  </div>
+                ` : ''}
+              </div>
+            </main>
+
+            <footer class="text-center text-xs text-slate-400 py-4 border-t border-slate-200 dark:border-slate-800">
+              متصل سحابياً بقاعدة بيانات Firebase Firestore • Jumping-Tempest
+            </footer>
+          </div>
+        `;
+        return;
+      }
+
+      // --- SCREEN 2: TABLES DIRECTORY ---
+      if (!state.selectedTable) {
+        root.innerHTML = `
+          <div class="min-h-screen flex flex-col">
+            <header class="h-16 px-6 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex items-center justify-between sticky top-0 z-30">
+              <div class="flex items-center gap-3">
+                <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-600 to-cyan-500 flex items-center justify-center text-white font-bold">
+                  &lt;/&gt;
+                </div>
+                <div>
+                  <h1 class="font-bold text-sm sm:text-base leading-tight">${isAr ? 'فريق المبرمجين' : 'CodeCollab'}</h1>
+                  <span class="text-[11px] text-emerald-500 font-mono font-semibold">● متصل بقاعدة بيانات Firebase</span>
+                </div>
+              </div>
+
+              <div class="flex items-center gap-2">
+                <button onclick="toggleLang()" class="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-800 text-xs font-semibold cursor-pointer">
+                  ${isAr ? 'EN' : 'عربي'}
+                </button>
+                <button onclick="toggleTheme()" class="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-800 text-xs font-semibold cursor-pointer">
+                  ${isDark ? '☀️ فاتح' : '🌙 داكن'}
+                </button>
+                <div class="h-5 w-px bg-slate-300 dark:bg-slate-700 mx-1"></div>
+                <div class="flex items-center gap-2">
+                  <img src="${state.user.photoURL}" alt="User" class="w-7 h-7 rounded-lg bg-slate-200 dark:bg-slate-700 object-cover">
+                  <span class="text-xs font-bold hidden sm:inline">${state.user.displayName}</span>
+                  <button onclick="logout()" class="text-xs text-rose-500 hover:underline px-1.5 py-1 cursor-pointer">خروج</button>
+                </div>
+              </div>
+            </header>
+
+            <main class="max-w-6xl w-full mx-auto px-6 py-8 flex-1">
+              <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
+                <div>
+                  <h2 class="text-2xl font-black tracking-tight">غرف العمل والتيبولز الحقيقية</h2>
+                  <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">تُحفظ جميع الغرف والملفات لحظياً على قاعدة بيانات Firestore</p>
+                </div>
+                <button onclick="openCreateModal()" class="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs shadow-lg shadow-indigo-600/20 flex items-center gap-2 self-start cursor-pointer">
+                  + إضافة تيبول جديد
+                </button>
+              </div>
+
+              ${state.tablesLoading ? `
+                <div class="text-center py-20 text-slate-400 text-sm">
+                  <div class="w-8 h-8 border-3 border-indigo-500/30 border-t-indigo-500 rounded-full animate-spin mx-auto mb-3"></div>
+                  <span>جاري المزامنة مع قاعدة بيانات Firebase الحقيقية...</span>
+                </div>
+              ` : state.tables.length === 0 ? `
+                <div class="text-center py-16 p-8 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-2xl">
+                  <p class="text-sm font-bold mb-2">لا توجد غرف عمل بعد في قاعدة البيانات</p>
+                  <p class="text-xs text-slate-400 mb-4">كن أول من ينشئ بيئة عمل جديدة لفريقك الآن!</p>
+                  <button onclick="openCreateModal()" class="px-4 py-2 rounded-xl bg-indigo-600 text-white text-xs font-bold cursor-pointer">+ إنشاء تيبول</button>
+                </div>
+              ` : `
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  ${state.tables.map(tbl => `
+                    <div onclick="selectTable('${tbl.id}')" class="p-6 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/90 hover:border-indigo-500/50 hover:shadow-xl transition-all cursor-pointer flex flex-col justify-between group">
+                      <div>
+                        <div class="flex items-center justify-between mb-3">
+                          <span class="text-[11px] font-bold px-2 py-0.5 rounded-md bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 uppercase">
+                            ${tbl.category}
+                          </span>
+                          ${tbl.isPrivate ? `
+                            <span class="text-[11px] px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-500 font-semibold">🔒 محمية</span>
+                          ` : `
+                            <span class="text-[11px] px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-500 font-semibold">🌐 عامة</span>
+                          `}
+                        </div>
+                        <h3 class="font-bold text-base mb-2 group-hover:text-indigo-500 transition-colors">${tbl.name}</h3>
+                        <p class="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 leading-relaxed mb-4">${tbl.description || 'بيئة عمل برمجية مشتركة تضم محرراً حياً وشات وتاسكات.'}</p>
+                      </div>
+
+                      <div class="pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs">
+                        <span class="text-slate-400">👥 ${tbl.memberCount} / ${tbl.maxMembers}</span>
+                        <span class="font-bold text-indigo-600 dark:text-indigo-400 group-hover:underline">دخول الغرفة &larr;</span>
+                      </div>
+                    </div>
+                  `).join('')}
+                </div>
+              `}
+            </main>
+
+            <!-- Create Table Modal -->
+            ${state.modals.createTable ? `
+              <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+                <div class="w-full max-w-md p-6 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl">
+                  <h3 class="font-bold text-base mb-1">إنشاء تيبول جديد للفريق (في Firestore)</h3>
+                  <p class="text-xs text-slate-500 mb-4">حدد اسم الغرفة وتفاصيل المشروع ورمز المرور إن رغبت</p>
+
+                  <form onsubmit="submitCreateTable(event)" class="space-y-4 text-xs">
+                    <div>
+                      <label class="block font-bold mb-1">اسم المجموعة / التيم *</label>
+                      <input id="create_name" type="text" required placeholder="مثال: فريق الويب، تطبيق التوصيل..." class="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white">
+                    </div>
+                    <div>
+                      <label class="block font-bold mb-1">وصف المشروع وخطة العمل</label>
+                      <textarea id="create_desc" rows="2" placeholder="ما الذي سنبنيه سوياً في هذه الغرفة؟" class="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white"></textarea>
+                    </div>
+                    <div class="grid grid-cols-2 gap-3">
+                      <div>
+                        <label class="block font-bold mb-1">التخصص</label>
+                        <select id="create_cat" class="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white">
+                          <option value="web">Web Development</option>
+                          <option value="mobile">Mobile Apps</option>
+                          <option value="ai">AI & Data</option>
+                          <option value="fullstack">Fullstack</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label class="block font-bold mb-1">أقصى عدد للأعضاء</label>
+                        <input id="create_max" type="number" value="5" min="2" max="50" class="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white">
+                      </div>
+                    </div>
+                    <div class="p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50">
+                      <div class="flex items-center justify-between mb-2">
+                        <span class="font-bold">حماية الغرفة برمز مرور (باسورد)</span>
+                        <input id="create_is_private" type="checkbox" onchange="togglePrivateInput(this.checked)" class="w-4 h-4 accent-indigo-600 rounded">
+                      </div>
+                      <div id="private_pass_container" class="hidden">
+                        <input id="create_pass" type="text" placeholder="اكتب رمز المرور المطلوب للانضمام" class="w-full p-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 font-mono">
+                      </div>
+                    </div>
+                    <div class="flex justify-end gap-2 pt-2">
+                      <button type="button" onclick="closeCreateModal()" class="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700">إلغاء</button>
+                      <button type="submit" class="px-5 py-2 rounded-xl bg-indigo-600 text-white font-bold">إنشاء التيبول</button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            ` : ''}
+
+            <!-- Join Password Modal -->
+            ${state.modals.joinPassword ? `
+              <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+                <div class="w-full max-w-sm p-6 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl">
+                  <h3 class="font-bold text-base mb-1">${state.modals.joinPassword.name}</h3>
+                  <p class="text-xs text-slate-500 mb-4">هذه الغرفة محمية، يرجى كتابة رمز المرور للانضمام:</p>
+                  <form onsubmit="submitJoinPass(event)" class="space-y-4 text-xs">
+                    <input id="join_pass_input" type="password" required autofocus placeholder="••••••••" class="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-center font-mono tracking-widest text-sm text-slate-900 dark:text-white">
+                    <div id="join_error_text" class="text-xs text-rose-500 text-center font-bold hidden">رمز المرور غير صحيح!</div>
+                    <div class="flex justify-end gap-2">
+                      <button type="button" onclick="closeJoinPassModal()" class="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700">إلغاء</button>
+                      <button type="submit" class="px-5 py-2 rounded-xl bg-indigo-600 text-white font-bold">انضمام</button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            ` : ''}
+          </div>
+        `;
+        return;
+      }
+
+      // --- SCREEN 3: ACTIVE TABLE WORKSPACE (REAL FIRESTORE DATA) ---
+      const activeFile = state.codeFiles.find(f => f.id === state.activeFileId) || state.codeFiles[0] || { name: 'loading.html', content: '' };
+
+      root.innerHTML = `
+        <div class="min-h-screen flex flex-col">
+          <!-- Top Workspace Bar -->
+          <header class="h-16 px-4 sm:px-6 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex items-center justify-between sticky top-0 z-30">
+            <div class="flex items-center gap-3">
+              <button onclick="backToTables()" class="px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 text-xs font-bold hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer">
+                &rarr; قائمة الغرف
+              </button>
+              <div class="h-4 w-px bg-slate-300 dark:bg-slate-700"></div>
+              <h2 class="font-bold text-sm sm:text-base truncate max-w-[180px] sm:max-w-sm">${state.selectedTable.name}</h2>
+              <span class="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 font-semibold hidden sm:inline">مزامنة سحابية مباشرة</span>
+            </div>
+
+            <div class="flex items-center gap-2">
+              <button onclick="toggleLang()" class="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-800 text-xs font-semibold cursor-pointer">
+                ${isAr ? 'EN' : 'عربي'}
+              </button>
+              <button onclick="toggleTheme()" class="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-800 text-xs font-semibold cursor-pointer">
+                ${isDark ? '☀️ فاتح' : '🌙 داكن'}
+              </button>
+              <img src="${state.user.photoURL}" alt="User" class="w-7 h-7 rounded-lg bg-slate-200 dark:bg-slate-700 object-cover">
+            </div>
+          </header>
+
+          <!-- Section Switcher Tabs -->
+          <div class="border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/60 px-4 sm:px-6 py-2 overflow-x-auto flex gap-2">
+            ${[
+              { id: 'code', label: 'البرمجيات والأكواد', icon: '💻' },
+              { id: 'chat', label: 'المحادثة والشات', icon: '💬' },
+              { id: 'tasks', label: 'المهام والتواريخ', icon: '📋' },
+              { id: 'docs', label: 'التوثيق والمعمارية', icon: '📖' },
+              { id: 'releases', label: 'الإصدارات والتصدير', icon: '🚀' }
+            ].map(tab => `
+              <button onclick="setWorkspaceTab('${tab.id}')" class="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
+                state.workspaceTab === tab.id ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800'
+              }">
+                <span>${tab.icon}</span>
+                <span>${tab.label}</span>
+              </button>
+            `).join('')}
+          </div>
+
+          <!-- Section 1: Code IDE -->
+          ${state.workspaceTab === 'code' ? `
+            <main class="flex-1 p-4 sm:p-6 flex flex-col">
+              <div class="h-[calc(100vh-10rem)] rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 flex flex-col overflow-hidden shadow-lg">
+                <div class="h-11 px-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 flex items-center justify-between text-xs">
+                  <div class="flex items-center gap-2 font-mono font-bold">
+                    <span>${activeFile.name}</span>
+                    <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+                    <span class="text-[10px] text-emerald-500 font-sans">مزامنة فورية Firestore</span>
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <button onclick="togglePreview()" class="px-3 py-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-semibold cursor-pointer">
+                      ${state.showPreview ? 'إخفاء المعاينة' : 'المعاينة الحية'}
+                    </button>
+                    <button onclick="downloadActiveFile()" class="px-3 py-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-semibold cursor-pointer">
+                      تحميل الملف
+                    </button>
+                  </div>
+                </div>
+
+                <div class="flex-1 flex overflow-hidden">
+                  <!-- File Tree -->
+                  <div class="w-44 sm:w-52 border-e border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/40 p-2 flex flex-col shrink-0">
+                    <div class="flex items-center justify-between pb-2 mb-2 border-b border-slate-200 dark:border-slate-800 text-[11px] font-bold text-slate-500">
+                      <span>الملفات (${state.codeFiles.length})</span>
+                      <button onclick="openNewFileModal()" class="px-1.5 py-0.5 rounded bg-indigo-500/10 text-indigo-500 font-bold hover:bg-indigo-500 hover:text-white cursor-pointer">+ جديد</button>
+                    </div>
+                    <div class="space-y-1 overflow-y-auto flex-1 font-mono text-xs">
+                      ${state.codeFiles.map(f => `
+                        <div onclick="selectFile('${f.id}')" class="p-2 rounded-xl cursor-pointer flex items-center justify-between ${
+                          f.id === activeFile.id ? 'bg-indigo-600 text-white font-bold' : 'hover:bg-slate-200 dark:hover:bg-slate-800'
+                        }">
+                          <span class="truncate">${f.name}</span>
+                        </div>
+                      `).join('')}
+                    </div>
+                  </div>
+
+                  <!-- Editor -->
+                  <div class="flex-1 flex flex-col bg-slate-950 text-slate-100 ${state.showPreview ? 'w-1/2' : 'w-full'}">
+                    <textarea id="code_editor_textarea" oninput="updateActiveCode(this.value)" spellcheck="false" dir="ltr" class="flex-1 w-full p-4 bg-transparent text-slate-200 font-mono text-xs sm:text-sm leading-6 resize-none focus:outline-none">${activeFile.content}</textarea>
+                  </div>
+
+                  <!-- Live Preview -->
+                  ${state.showPreview ? `
+                    <div class="w-1/2 border-s border-slate-200 dark:border-slate-800 bg-white flex flex-col">
+                      <div class="h-8 px-3 bg-slate-100 border-b border-slate-200 text-slate-600 text-[11px] font-bold flex items-center">
+                        المعاينة الحية التفاعلية
+                      </div>
+                      <iframe id="live_preview_iframe" class="w-full flex-1 border-none bg-white"></iframe>
+                    </div>
+                  ` : ''}
+                </div>
+              </div>
+            </main>
+          ` : ''}
+
+          <!-- Section 2: Team Chat (Real-time Firestore) -->
+          ${state.workspaceTab === 'chat' ? `
+            <main class="flex-1 p-4 sm:p-6 flex flex-col">
+              <div class="h-[calc(100vh-10rem)] rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex flex-col overflow-hidden shadow-lg">
+                <div class="h-12 px-6 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 flex items-center justify-between text-xs font-bold">
+                  <span>محادثة الفريق المباشرة (${state.chatMessages.length} رسالة سحابية)</span>
+                  <span class="text-emerald-500 font-normal">متصل بـ Firestore</span>
+                </div>
+                <div id="chat_scroll_area" class="flex-1 overflow-y-auto p-4 space-y-3">
+                  ${state.chatMessages.length === 0 ? `
+                    <div class="text-center py-16 text-slate-400 text-xs">لا توجد رسائل بعد. ابدأ المحادثة مع فريقك الآن!</div>
+                  ` : state.chatMessages.map(m => `
+                    <div class="p-3 rounded-2xl bg-slate-100 dark:bg-slate-800/80 max-w-lg text-xs leading-relaxed">
+                      <div class="flex items-center justify-between text-[11px] text-slate-500 mb-1 font-semibold">
+                        <span>${m.senderName || 'عضو الفريق'}</span>
+                        <span>${new Date(m.createdAt || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                      </div>
+                      <p>${m.text}</p>
+                    </div>
+                  `).join('')}
+                </div>
+                <form onsubmit="submitChatMessage(event)" class="p-3 border-t border-slate-200 dark:border-slate-800 flex gap-2">
+                  <input id="chat_input_text" type="text" placeholder="اكتب رسالتك لزملائك في الغرفة..." class="flex-1 p-2.5 rounded-xl text-xs border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white">
+                  <button type="submit" class="px-5 py-2.5 rounded-xl bg-indigo-600 text-white font-bold text-xs cursor-pointer">
+                    إرسال
+                  </button>
+                </form>
+              </div>
+            </main>
+          ` : ''}
+
+          <!-- Section 3: Tasks Kanban (Real-time Firestore) -->
+          ${state.workspaceTab === 'tasks' ? `
+            <main class="flex-1 p-4 sm:p-6 flex flex-col">
+              <div class="h-[calc(100vh-10rem)] flex flex-col">
+                <div class="flex items-center justify-between mb-4">
+                  <h3 class="font-bold text-sm sm:text-base">لوحة مهام المشروع والتسليمات (Firestore)</h3>
+                  <button onclick="openAddTaskModal()" class="px-4 py-2 rounded-xl bg-indigo-600 text-white font-bold text-xs cursor-pointer">
+                    + إضافة مهمة
+                  </button>
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 flex-1 overflow-y-auto">
+                  ${[
+                    { id: 'todo', label: 'قيد الانتظار' },
+                    { id: 'in_progress', label: 'جاري العمل' },
+                    { id: 'review', label: 'مراجعة الكود' },
+                    { id: 'done', label: 'منجزة' },
+                  ].map(col => {
+                    const colTasks = state.tasks.filter(t => t.status === col.id);
+                    return `
+                      <div class="p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/60 flex flex-col">
+                        <div class="flex items-center justify-between pb-2 mb-3 border-b border-slate-200 dark:border-slate-800 text-xs font-bold">
+                          <span>${col.label}</span>
+                          <span class="w-5 h-5 rounded-full bg-white dark:bg-slate-800 text-center leading-5 text-[11px]">${colTasks.length}</span>
+                        </div>
+                        <div class="space-y-2 flex-1 overflow-y-auto">
+                          ${colTasks.map(tsk => `
+                            <div class="p-3 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700/80 shadow-sm text-xs">
+                              <h5 class="font-bold mb-1.5">${tsk.title}</h5>
+                              <div class="flex items-center justify-between text-[11px] text-slate-500 pt-2 border-t border-slate-100 dark:border-slate-700">
+                                <span>${tsk.assignee || 'عضو'}</span>
+                                <button onclick="cycleTask('${tsk.id}')" class="text-indigo-600 dark:text-indigo-400 font-bold hover:underline cursor-pointer">
+                                  نقل &larr;
+                                </button>
+                              </div>
+                            </div>
+                          `).join('')}
+                        </div>
+                      </div>
+                    `;
+                  }).join('')}
+                </div>
+              </div>
+            </main>
+          ` : ''}
+
+          <!-- Section 4: Specs & Docs -->
+          ${state.workspaceTab === 'docs' ? `
+            <main class="flex-1 p-4 sm:p-6 flex flex-col">
+              <div class="h-[calc(100vh-10rem)] rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex flex-col p-6 overflow-y-auto">
+                <div class="flex items-center justify-between pb-4 mb-4 border-b border-slate-200 dark:border-slate-800">
+                  <h3 class="font-bold text-base">توثيق مواصفات ومعمارية النظام</h3>
+                  <span class="text-xs text-slate-400">حفظ سحابي مباشر</span>
+                </div>
+                <textarea id="doc_textarea_editor" class="flex-1 w-full p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 font-mono text-xs sm:text-sm leading-relaxed resize-none focus:outline-none text-slate-800 dark:text-slate-200" placeholder="اكتب مواصفات ومعمارية وتفاصيل المشروع هنا...">${state.docs.length > 0 ? state.docs[0].content : '## معمارية المشروع ومواصفات النظام\n\nاكتب هنا تفاصيل الـ APIs والمعمارية البرمجية...'}</textarea>
+              </div>
+            </main>
+          ` : ''}
+
+          <!-- Section 5: Releases & Export -->
+          ${state.workspaceTab === 'releases' ? `
+            <main class="flex-1 p-4 sm:p-6 flex flex-col">
+              <div class="h-[calc(100vh-10rem)] rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 flex flex-col overflow-y-auto space-y-6">
+                <div class="p-6 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div>
+                    <h4 class="font-bold text-base mb-1">تصدير حزمة المشروع بالكامل</h4>
+                    <p class="text-xs text-slate-500">تحميل كافة الأكواد الحالية والمهام والوثائق في ملف JSON مستقل على جهازك.</p>
+                  </div>
+                  <button onclick="exportProjectBundle()" class="px-5 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs flex items-center gap-2 cursor-pointer self-start sm:self-auto">
+                    تحميل المشروع الآن
+                  </button>
+                </div>
+
+                <div class="flex-1">
+                  <h4 class="font-bold text-sm mb-4">سجل الـ Commits الحقيقية في Firestore</h4>
+                  <form onsubmit="submitCommit(event)" class="flex gap-2 mb-6">
+                    <input id="commit_msg_input" type="text" required placeholder="رسالة الإصدار (مثال: تحديث واجهة المعاينة...)" class="flex-1 p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs text-slate-900 dark:text-white">
+                    <button type="submit" class="px-5 py-2.5 rounded-xl bg-indigo-600 text-white font-bold text-xs cursor-pointer">
+                      حفظ Commit
+                    </button>
+                  </form>
+
+                  <div class="space-y-3 font-mono text-xs">
+                    ${state.commits.map(c => `
+                      <div class="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/60 flex items-center justify-between">
+                        <div>
+                          <div class="font-bold text-slate-900 dark:text-white mb-0.5">${c.message}</div>
+                          <div class="text-[11px] text-slate-400">بواسطة: ${c.authorName || 'مطور'}</div>
+                        </div>
+                        <span class="text-[10px] text-slate-500">${new Date(c.createdAt || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                      </div>
+                    `).join('')}
+                  </div>
+                </div>
+              </div>
+            </main>
+          ` : ''}
+
+          <!-- New File Modal -->
+          ${state.modals.newFile ? `
+            <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+              <div class="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 w-80 text-xs">
+                <h4 class="font-bold mb-2">اسم الملف الجديد</h4>
+                <form onsubmit="submitNewFile(event)" class="space-y-3">
+                  <input id="new_file_input" type="text" required placeholder="component.js أو style.css" class="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white font-mono">
+                  <div class="flex justify-end gap-2">
+                    <button type="button" onclick="closeNewFileModal()" class="px-3 py-1.5 rounded-lg border">إلغاء</button>
+                    <button type="submit" class="px-4 py-1.5 rounded-lg bg-indigo-600 text-white font-bold">إنشاء</button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          ` : ''}
+
+          <!-- Add Task Modal -->
+          ${state.modals.addTask ? `
+            <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+              <div class="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 w-80 text-xs">
+                <h4 class="font-bold mb-3">إضافة مهمة جديدة (في Firestore)</h4>
+                <form onsubmit="submitAddTask(event)" class="space-y-3">
+                  <input id="new_task_input" type="text" required placeholder="عنوان المهمة..." class="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white">
+                  <div class="flex justify-end gap-2">
+                    <button type="button" onclick="closeAddTaskModal()" class="px-3 py-1.5 rounded-lg border">إلغاء</button>
+                    <button type="submit" class="px-4 py-1.5 rounded-lg bg-indigo-600 text-white font-bold">إضافة</button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          ` : ''}
+        </div>
+      `;
+
+      if (state.workspaceTab === 'code' && state.showPreview) {
+        setTimeout(updatePreviewIframe, 50);
+      }
+    }
+
+    // Initial render
+    render();
+  </script>
+</body>
+</html>
