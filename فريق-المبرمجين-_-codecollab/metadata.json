@@ -1,0 +1,7 @@
+{
+  "name": "فريق المبرمجين | CodeCollab",
+  "description": "منصة تعاونية شاملة لفرق البرمجة: محرر أكواد حي وتفاعلي بلغات متعددة مع معاينة مباشرة، غرف عمل، شات فوري، إدارة مهام، ودعم كامل للغتين العربية والإنجليزية.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+

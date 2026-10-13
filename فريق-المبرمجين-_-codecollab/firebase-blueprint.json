@@ -1,0 +1,159 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User profile data",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "maxLength": 128 },
+        "displayName": { "type": "string", "maxLength": 100 },
+        "email": { "type": "string", "maxLength": 200 },
+        "photoURL": { "type": "string", "maxLength": 500 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "displayName", "email", "createdAt"]
+    },
+    "Table": {
+      "title": "Table",
+      "description": "Team workspace table",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "maxLength": 100, "minLength": 2 },
+        "description": { "type": "string", "maxLength": 500 },
+        "isPrivate": { "type": "boolean" },
+        "password": { "type": "string", "maxLength": 50 },
+        "maxMembers": { "type": "number" },
+        "category": { "type": "string", "maxLength": 50 },
+        "creatorId": { "type": "string", "maxLength": 128 },
+        "creatorName": { "type": "string", "maxLength": 100 },
+        "memberCount": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "isPrivate", "creatorId", "creatorName", "createdAt", "updatedAt"]
+    },
+    "TableMember": {
+      "title": "TableMember",
+      "description": "Member of a team table",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "maxLength": 128 },
+        "displayName": { "type": "string", "maxLength": 100 },
+        "photoURL": { "type": "string", "maxLength": 500 },
+        "role": { "type": "string", "enum": ["owner", "member"] },
+        "joinedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "displayName", "role", "joinedAt"]
+    },
+    "CodeFile": {
+      "title": "CodeFile",
+      "description": "Source code file in a table workspace",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "maxLength": 100 },
+        "language": { "type": "string", "maxLength": 30 },
+        "content": { "type": "string", "maxLength": 500000 },
+        "lastModifiedBy": { "type": "string", "maxLength": 128 },
+        "lastModifiedByName": { "type": "string", "maxLength": 100 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "language", "content", "lastModifiedBy", "lastModifiedByName", "createdAt", "updatedAt"]
+    },
+    "ChatMessage": {
+      "title": "ChatMessage",
+      "description": "Real-time chat message in a table room",
+      "type": "object",
+      "properties": {
+        "text": { "type": "string", "maxLength": 2000 },
+        "senderId": { "type": "string", "maxLength": 128 },
+        "senderName": { "type": "string", "maxLength": 100 },
+        "senderPhoto": { "type": "string", "maxLength": 500 },
+        "codeSnippet": { "type": "string", "maxLength": 10000 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["text", "senderId", "senderName", "createdAt"]
+    },
+    "TaskItem": {
+      "title": "TaskItem",
+      "description": "Task milestone item in a table",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "maxLength": 200, "minLength": 2 },
+        "description": { "type": "string", "maxLength": 1000 },
+        "status": { "type": "string", "enum": ["todo", "in_progress", "review", "done"] },
+        "priority": { "type": "string", "enum": ["low", "medium", "high", "urgent"] },
+        "assignedTo": { "type": "string", "maxLength": 128 },
+        "assignedToName": { "type": "string", "maxLength": 100 },
+        "dueDate": { "type": "string", "maxLength": 50 },
+        "creatorId": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "status", "priority", "creatorId", "createdAt", "updatedAt"]
+    },
+    "DocItem": {
+      "title": "DocItem",
+      "description": "Documentation or architecture specification document",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "maxLength": 200, "minLength": 2 },
+        "content": { "type": "string", "maxLength": 50000 },
+        "category": { "type": "string", "enum": ["spec", "api", "guide", "notes"] },
+        "updatedBy": { "type": "string", "maxLength": 128 },
+        "updatedByName": { "type": "string", "maxLength": 100 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "content", "category", "updatedBy", "updatedByName", "createdAt", "updatedAt"]
+    },
+    "CommitItem": {
+      "title": "CommitItem",
+      "description": "Version snapshot or commit log entry",
+      "type": "object",
+      "properties": {
+        "message": { "type": "string", "maxLength": 300, "minLength": 2 },
+        "authorId": { "type": "string", "maxLength": 128 },
+        "authorName": { "type": "string", "maxLength": 100 },
+        "filesCount": { "type": "number" },
+        "snapshotSummary": { "type": "string", "maxLength": 1000 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["message", "authorId", "authorName", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "User profile store"
+    },
+    "/tables/{tableId}": {
+      "schema": "Table",
+      "description": "Team workspace table entities"
+    },
+    "/tables/{tableId}/members/{memberId}": {
+      "schema": "TableMember",
+      "description": "Members enrolled in a table"
+    },
+    "/tables/{tableId}/files/{fileId}": {
+      "schema": "CodeFile",
+      "description": "Code files managed by team in this table"
+    },
+    "/tables/{tableId}/messages/{messageId}": {
+      "schema": "ChatMessage",
+      "description": "Live chat messages within the table"
+    },
+    "/tables/{tableId}/tasks/{taskId}": {
+      "schema": "TaskItem",
+      "description": "Sprint and project tasks for the table"
+    },
+    "/tables/{tableId}/docs/{docId}": {
+      "schema": "DocItem",
+      "description": "Specs and technical docs for the table"
+    },
+    "/tables/{tableId}/commits/{commitId}": {
+      "schema": "CommitItem",
+      "description": "Version commits and release logs"
+    }
+  }
+}
